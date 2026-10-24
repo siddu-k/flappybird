@@ -10,9 +10,16 @@
   <div id="game-container">
     <canvas id="gameCanvas" width="400" height="600"></canvas>
     <div id="ui-overlay">
+      <!-- Heart icons (always visible during play, synced by JS) -->
+      <div id="hearts-bar" style="display:none">
+        <span class="heart-icon" aria-label="life 1">❤️</span>
+        <span class="heart-icon" aria-label="life 2">❤️</span>
+        <span class="heart-icon" aria-label="life 3">❤️</span>
+      </div>
       <div id="start-screen" class="screen">
         <h1>Flappy Bird</h1>
         <p>Press <strong>Space</strong> or tap to flap</p>
+        <p class="lives-hint">You have <strong>3 lives</strong> — use them wisely!</p>
         <button id="startBtn">Start Game</button>
       </div>
       <div id="game-over-screen" class="screen hidden">

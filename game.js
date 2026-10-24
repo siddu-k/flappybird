@@ -6,10 +6,18 @@ const W = canvas.width;
 const H = canvas.height;
 
 // ─── Game State ───────────────────────────────────────────────────────────────
-let state = 'idle'; // 'idle' | 'playing' | 'dead'
+let state = 'idle'; // 'idle' | 'playing' | 'hit' | 'dead'
 let score = 0;
 let bestScore = 0;
 let animId;
+
+// ─── Lives / Hearts ───────────────────────────────────────────────────────────
+const MAX_LIVES = 3;
+let lives = MAX_LIVES;
+let isInvincible = false;     // brief grace period after a hit
+let invincibleTimer = 0;
+const INVINCIBLE_MS = 1500;   // 1.5 s of invincibility after each hit
+let flashTimer = 0;           // controls bird flash on hit
 
 // ─── Bird ─────────────────────────────────────────────────────────────────────
 const BIRD = {
@@ -26,6 +34,11 @@ const BIRD = {
     this.y = H / 2;
     this.vy = 0;
     this.rotation = 0;
+  },
+
+  // Bounce bird back up slightly after a hit
+  bounce() {
+    this.vy = this.jumpForce * 0.7;
   },
 
   flap() {
@@ -147,24 +160,51 @@ function drawPipes() {
   pipes.forEach(drawPipe);
 }
 
-function checkCollisions() {
+function checkCollisions(timestamp) {
+  if (isInvincible) {
+    // Still check scoring even during invincibility
+    for (const p of pipes) {
+      if (!p.passed && p.x + PIPE_W / 2 < BIRD.x) {
+        p.passed = true;
+        score++;
+      }
+    }
+    return false;
+  }
+
   const b = BIRD.getBounds();
 
-  // Floor / ceiling
-  if (b.y <= 0 || b.y + b.h >= H - GROUND_H) return true;
+  // Floor / ceiling hit
+  const hitBoundary = b.y <= 0 || b.y + b.h >= H - GROUND_H;
 
+  let hitPipe = false;
   for (const p of pipes) {
     const inX = b.x < p.x + PIPE_W && b.x + b.w > p.x;
     const inTop = b.y < p.topH;
     const inBot = b.y + b.h > p.topH + PIPE_GAP;
-    if (inX && (inTop || inBot)) return true;
+    if (inX && (inTop || inBot)) { hitPipe = true; break; }
 
-    // Score when bird passes pipe centre
     if (!p.passed && p.x + PIPE_W / 2 < BIRD.x) {
       p.passed = true;
       score++;
     }
   }
+
+  if (hitBoundary || hitPipe) {
+    lives--;
+    updateHeartsDisplay();
+
+    if (lives <= 0) {
+      return true; // game over
+    }
+
+    // Lost a life — grant invincibility and bounce
+    isInvincible = true;
+    invincibleTimer = timestamp;
+    flashTimer = 0;
+    BIRD.bounce();
+  }
+
   return false;
 }
 
@@ -237,6 +277,61 @@ function drawScore() {
   ctx.fillText(score, W / 2, 60);
 }
 
+// ─── Hearts HUD (drawn on canvas) ────────────────────────────────────────────
+function drawHeart(x, y, size, filled) {
+  ctx.save();
+  ctx.beginPath();
+  const s = size / 2;
+  ctx.moveTo(x, y + s * 0.4);
+  ctx.bezierCurveTo(x, y, x - s, y, x - s, y + s * 0.4);
+  ctx.bezierCurveTo(x - s, y + s * 0.8, x, y + s * 1.2, x, y + s * 1.6);
+  ctx.bezierCurveTo(x, y + s * 1.2, x + s, y + s * 0.8, x + s, y + s * 0.4);
+  ctx.bezierCurveTo(x + s, y, x, y, x, y + s * 0.4);
+  ctx.closePath();
+
+  if (filled) {
+    ctx.fillStyle = '#e74c3c';
+    ctx.shadowColor = '#ff6b6b';
+    ctx.shadowBlur = 8;
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHearts() {
+  const size = 26;
+  const spacing = 34;
+  const startX = 18 + size / 2;
+  const y = 12;
+
+  for (let i = 0; i < MAX_LIVES; i++) {
+    drawHeart(startX + i * spacing, y, size, i < lives);
+  }
+}
+
+// ─── Sync DOM heart icons ─────────────────────────────────────────────────────
+function updateHeartsDisplay() {
+  const icons = document.querySelectorAll('.heart-icon');
+  icons.forEach((el, i) => {
+    const shouldBeLost = i >= lives;
+    const wasLost = el.classList.contains('lost');
+    if (shouldBeLost && !wasLost) {
+      // Trigger pulse animation then settle
+      el.classList.add('losing');
+      setTimeout(() => {
+        el.classList.remove('losing');
+        el.classList.add('lost');
+      }, 360);
+    } else if (!shouldBeLost) {
+      el.classList.remove('lost', 'losing');
+    }
+  });
+}
+
 // ─── Main Loop ────────────────────────────────────────────────────────────────
 function gameLoop(timestamp) {
   ctx.clearRect(0, 0, W, H);
@@ -248,22 +343,35 @@ function gameLoop(timestamp) {
     updatePipes(timestamp);
     BIRD.update();
 
-    if (checkCollisions()) {
+    // Lift invincibility after grace period
+    if (isInvincible && timestamp - invincibleTimer > INVINCIBLE_MS) {
+      isInvincible = false;
+    }
+
+    if (checkCollisions(timestamp)) {
       state = 'dead';
       endGame();
       drawPipes();
       BIRD.draw();
       drawGround();
       drawScore();
+      drawHearts();
       return;
     }
   }
 
   drawPipes();
-  BIRD.draw();
+
+  // Flash bird while invincible (every ~100ms)
+  const shouldHide = isInvincible && Math.floor((timestamp - invincibleTimer) / 100) % 2 === 1;
+  if (!shouldHide) BIRD.draw();
+
   drawGround();
 
-  if (state === 'playing') drawScore();
+  if (state === 'playing') {
+    drawScore();
+    drawHearts();
+  }
 
   animId = requestAnimationFrame(gameLoop);
 }
@@ -271,11 +379,15 @@ function gameLoop(timestamp) {
 // ─── Game Controls ────────────────────────────────────────────────────────────
 function startGame() {
   score = 0;
+  lives = MAX_LIVES;
+  isInvincible = false;
   pipes = [];
   lastPipeTime = 0;
   BIRD.reset();
   state = 'playing';
 
+  updateHeartsDisplay();
+  document.getElementById('hearts-bar').style.display = 'flex';
   document.getElementById('start-screen').classList.add('hidden');
   document.getElementById('game-over-screen').classList.add('hidden');
 
@@ -288,6 +400,7 @@ function endGame() {
   document.getElementById('final-score').textContent = score;
   document.getElementById('best-score').textContent = bestScore;
   document.getElementById('game-over-screen').classList.remove('hidden');
+  document.getElementById('hearts-bar').style.display = 'none';
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────

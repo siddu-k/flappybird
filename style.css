@@ -36,6 +36,37 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
+  pointer-events: none; /* let canvas receive clicks */
+}
+
+/* Re-enable pointer events only on interactive children */
+#ui-overlay .screen,
+#ui-overlay button {
+  pointer-events: auto;
+}
+
+/* ─── Hearts Bar ─────────────────────────────────────────────────────────── */
+#hearts-bar {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.heart-icon {
+  font-size: 22px;
+  line-height: 1;
+  transition: transform 0.2s, filter 0.2s, opacity 0.3s;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4));
+}
+
+/* Lost heart — grey and shrunk */
+.heart-icon.lost {
+  filter: grayscale(1) opacity(0.35);
+  transform: scale(0.8);
 }
 
 .screen {
@@ -83,4 +114,22 @@ body {
 
 .screen button:active {
   transform: scale(0.97);
+}
+
+/* Lives hint text on start screen */
+.lives-hint {
+  font-size: 0.88rem !important;
+  color: #ff8a8a !important;
+  margin-bottom: 14px !important;
+}
+
+/* Pulse animation when a heart is lost */
+@keyframes heartLost {
+  0%   { transform: scale(1.4); }
+  50%  { transform: scale(0.7); }
+  100% { transform: scale(0.8); }
+}
+
+.heart-icon.losing {
+  animation: heartLost 0.35s ease forwards;
 }
